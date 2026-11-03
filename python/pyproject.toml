@@ -1,0 +1,50 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pulseg"
+description = "PulSeg: a segment-based intermediate representation of MRI pulse sequences."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Jon-Fredrik Nielsen" },
+    { name = "Matteo Cencini" },
+]
+keywords = ["MRI", "pulse sequence", "Pulseq", "intermediate representation"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
+]
+dependencies = ["numpy>=1.24"]
+dynamic = ["version"]
+
+[project.optional-dependencies]
+pulseq = ["pypulseqpp>=0.0.57"]
+test = ["pytest>=8"]
+dev = ["pulseg[pulseq,test]", "ruff>=0.6", "build>=1.2", "twine>=5"]
+
+[project.urls]
+Homepage = "https://github.com/HarmonizedMRI/pulseg"
+Specification = "https://github.com/HarmonizedMRI/pulseg/blob/dev/docs/spec.md"
+Issues = "https://github.com/HarmonizedMRI/pulseg/issues"
+
+[tool.hatch.version]
+path = "src/pulseg/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pulseg"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
