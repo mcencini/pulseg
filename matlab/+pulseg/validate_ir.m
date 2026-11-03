@@ -222,6 +222,10 @@ function validate_ir(pulseg_ir)
                 '%s.physio_trigger must be 0 or 1.', inst_name);
         end
 
+        %% Optional 2.2.0 instance fields
+
+        check_v22_fields(inst, inst_name, counts, char(pulseg_ir.pulseg_version));
+
         %% Optional label
 
         if isfield(inst, 'label') && ~isempty(inst.label)
@@ -309,6 +313,7 @@ function counts = count_events_in_virtual_segment(vs, base_blocks)
     counts.n_rf = 0;
     counts.n_grad = 0;
     counts.n_adc = 0;
+    counts.n_trig = 0;
 
     for j = 1:numel(ids)
         id = ids(j);
@@ -336,7 +341,66 @@ function counts = count_events_in_virtual_segment(vs, base_blocks)
         if has_event(b, 'adc')
             counts.n_adc = counts.n_adc + 1;
         end
+
+        if has_output_trigger(b)
+            counts.n_trig = counts.n_trig + 1;
+        end
     end
+end
+
+
+function tf = has_output_trigger(b)
+% HAS_OUTPUT_TRIGGER True if a block carries an output trigger (digital output pulse).
+
+    tf = false;
+    if ~has_event(b, 'trig')
+        return;
+    end
+    for ii = 1:numel(b.trig)
+        if isfield(b.trig(ii), 'type') && strcmp(char(b.trig(ii).type), 'output')
+            tf = true;
+            return;
+        end
+    end
+end
+
+
+function check_v22_fields(inst, inst_name, counts, version)
+% CHECK_V22_FIELDS Validate the optional instance fields PulSeg 2.2.0 defines.
+
+    used = {};
+
+    if isfield(inst, 'rf_shim') && ~isempty(inst.rf_shim)
+        used{end+1} = 'rf_shim';
+        assert(isnumeric(inst.rf_shim) && ismatrix(inst.rf_shim) && size(inst.rf_shim, 1) == counts.n_rf, ...
+            '%s.rf_shim must be an n_rf x n_channels array with n_rf = %d.', inst_name, counts.n_rf);
+        assert(all(isfinite(inst.rf_shim(:))), '%s.rf_shim contains non-finite values.', inst_name);
+    end
+
+    flag_vectors = {'adc_acquire', counts.n_adc; 'trig_enable', counts.n_trig};
+    for ii = 1:size(flag_vectors, 1)
+        f = flag_vectors{ii, 1};
+        if isfield(inst, f) && ~isempty(inst.(f))
+            used{end+1} = f; %#ok<AGROW>
+            check_numeric_vector(inst.(f), sprintf('%s.%s', inst_name, f), flag_vectors{ii, 2});
+            assert(all(ismember(inst.(f)(:), [0 1])), '%s.%s entries must be 0 or 1.', inst_name, f);
+        end
+    end
+
+    flags = {'norot', 'nopos', 'pmc'};
+    for ii = 1:numel(flags)
+        f = flags{ii};
+        if isfield(inst, f) && ~isempty(inst.(f))
+            assert(isnumeric(inst.(f)) && isscalar(inst.(f)) && ismember(inst.(f), [0 1]), ...
+                '%s.%s must be 0 or 1.', inst_name, f);
+            if inst.(f) ~= 0
+                used{end+1} = f; %#ok<AGROW>
+            end
+        end
+    end
+
+    assert(isempty(used) || strcmp(version, '2.2.0'), ...
+        '%s sets %s, which require pulseg_version 2.2.0.', inst_name, strjoin(used, ', '));
 end
 
 

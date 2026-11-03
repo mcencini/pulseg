@@ -1,5 +1,7 @@
 """Reading Pulseq sequences through pulserver and writing them back."""
 
+from types import SimpleNamespace
+
 import numpy as np
 import pypulseqpp as pp
 import pytest
@@ -222,3 +224,39 @@ def test_write_defaults_to_the_system_the_sequence_was_read_under():
     seq = spiral_interleaves()
     rep = pulseg.read(seq)
     assert rep.system is seq.system
+
+
+def test_an_rf_offset_in_ppm_reads_as_hz_at_the_systems_field():
+    system = pp.Opts(B0=7.0)
+    seq = pp.Sequence(system)
+    seq.add_block(pp.make_block_pulse(np.pi / 2, duration=1e-3, freq_ppm=-3.4, system=system))
+    seq.add_block(pp.make_delay(1e-3))
+    rep = pulseg.read(seq)
+    expected = -3.4e-6 * system.gamma * 7.0
+    assert rep.execution_stream[0].rf_frequency_offset[0] == pytest.approx(expected, rel=1e-5)
+
+
+def test_a_soft_delay_reads_as_its_designed_duration():
+    seq = gradient_echo(n_lines=1)
+    seq.add_block(pp.make_delay(5e-3), pp.make_soft_delay("TE", offset=1e-3, factor=2.0))
+    rep = pulseg.read(seq)
+    assert rep.execution_stream[-1].block_duration[-1] == pytest.approx(5e-3)
+
+
+def test_a_disabled_output_trigger_is_not_written(representation):
+    trigger = SimpleNamespace(type="output", channel="osc0", delay=0.0, duration=1e-4)
+    representation.base_block(2).block.trig = [trigger]
+    representation.pulseg_version = "2.2.0"
+    representation.execution_stream[1].trig_enable = np.array([0])
+    pulseg.validate_ir(representation)
+    back = pulseg.write(representation, system=pp.Opts())
+    fired = [i for i in range(1, back.num_blocks + 1) if getattr(back.get_block(i), "trig", None)]
+    assert fired == [1]
+
+
+def test_a_readout_played_but_not_stored_is_refused_by_write(representation):
+    representation.pulseg_version = "2.2.0"
+    representation.execution_stream[0].adc_acquire = np.array([0])
+    pulseg.validate_ir(representation)
+    with pytest.raises(NotImplementedError, match="adc_acquire"):
+        pulseg.write(representation, system=pp.Opts())

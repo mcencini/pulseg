@@ -22,6 +22,15 @@ function seq = write_seq(pulseg_ir, seqfile, varargin)
 %   system      []
 %       Optional Pulseq system limits object passed to mr.Sequence(system).
 %
+% PulSeg 2.2.0 instance fields
+%   rf_shim     emitted as an mr.makeRfShim event in each RF block.
+%   norot, nopos, pmc
+%               emitted as NOROT, NOPOS and PMC SET labels where an instance
+%               changes them.
+%   trig_enable output triggers whose entry is 0 are not emitted.
+%   adc_acquire an entry of 0 is refused: Pulseq has no readout that is
+%               played but not stored.
+%
 % Limitations
 %   - Non-identity gradient rotation matrices are not yet exported.
 %   - physio_trigger is not yet exported.
@@ -65,6 +74,10 @@ vs_ids = [pulseg_ir.virtual_segments.id];
 
 n_instances = numel(pulseg_ir.execution_stream);
 
+flag_names = {'norot', 'nopos', 'pmc'};
+flag_labels = {'NOROT', 'NOPOS', 'PMC'};
+flag_state = [0 0 0];
+
 if arg.verbose
     fprintf('Flattening PulSeg IR with %d segment instances...\n', n_instances);
 end
@@ -83,6 +96,27 @@ for k = 1:n_instances
     rf_i = 0;
     grad_i = 0;
     adc_i = 0;
+    trig_i = 0;
+
+    % Labels for the first block of this instance.
+    pending = {};
+    for f = 1:numel(flag_names)
+        value = getfield_default(inst, flag_names{f}, 0);
+        if isempty(value)
+            value = 0;
+        end
+        if value ~= flag_state(f)
+            pending{end+1} = mr.makeLabel('SET', flag_labels{f}, logical(value)); %#ok<AGROW>
+            flag_state(f) = value;
+        end
+    end
+
+    adc_acquire = getfield_default(inst, 'adc_acquire', []);
+    if ~isempty(adc_acquire) && any(adc_acquire(:) == 0)
+        error(['execution_stream(%d).adc_acquire has a readout that is played but not stored, ' ...
+               'which a Pulseq file cannot express.'], k);
+    end
+    trig_enable = getfield_default(inst, 'trig_enable', []);
 
     if isfield(inst, 'physio_trigger') && ~isempty(inst.physio_trigger) && inst.physio_trigger ~= 0
         error(['execution_stream(%d).physio_trigger is set, but physio trigger ' ...
@@ -97,7 +131,8 @@ for k = 1:n_instances
         if base_id == 0 || base_id == 1
             % Reserved implicit delay blocks.
             delay_event = mr.makeDelay(requested_duration);
-            seq.addBlock(delay_event);
+            seq.addBlock(delay_event, pending{:});
+            pending = {};
             continue;
         end
 
@@ -108,6 +143,7 @@ for k = 1:n_instances
 
         % Copy normalized base block.
         b = pulseg_ir.base_blocks(p).block;
+        outputs = output_triggers(b);
 
         % Remove stream-local or source-file metadata/extensions that should
         % not blindly propagate to every emitted block.
@@ -163,6 +199,20 @@ for k = 1:n_instances
         end
 
         events = block_to_events(b);
+
+        if has_rf && isfield(inst, 'rf_shim') && ~isempty(inst.rf_shim)
+            events{end+1} = mr.makeRfShim(inst.rf_shim(rf_i, :));
+        end
+
+        if ~isempty(outputs)
+            trig_i = trig_i + 1;
+            if isempty(trig_enable) || trig_enable(trig_i) ~= 0
+                events = [events, num2cell(outputs)];
+            end
+        end
+
+        events = [events, pending];
+        pending = {};
 
         % Enforce PulSeg block_duration.
         %
@@ -230,6 +280,21 @@ function tf = has_event(b, fieldname)
 % HAS_EVENT True if a Pulseq block contains a nonempty event field.
 
 tf = isstruct(b) && isfield(b, fieldname) && ~isempty(b.(fieldname));
+
+return
+
+function outputs = output_triggers(b)
+% OUTPUT_TRIGGERS The output triggers (digital output pulses) of a base block.
+
+outputs = [];
+if ~has_event(b, 'trig')
+    return;
+end
+for ii = 1:numel(b.trig)
+    if isfield(b.trig(ii), 'type') && strcmp(char(b.trig(ii).type), 'output')
+        outputs = [outputs, b.trig(ii)]; %#ok<AGROW>
+    end
+end
 
 return
 

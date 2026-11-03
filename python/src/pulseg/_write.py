@@ -37,7 +37,11 @@ def physical_blocks(rep: Representation):
     """
     for inst in rep.execution_stream:
         segment = rep.virtual_segment(inst.virtual_segment_id)
-        n_rf = n_grad = n_adc = 0
+        n_rf = n_grad = n_adc = n_trig = 0
+        if inst.adc_acquire is not None and np.any(np.asarray(inst.adc_acquire) == 0):
+            raise NotImplementedError(
+                "adc_acquire has a readout that is played but not stored, which a Pulseq file cannot express"
+            )
         for position, block_id in enumerate(segment.base_block_ids):
             duration = float(inst.block_duration[position])
             if block_id in (CONSTANT_DELAY_ID, VARIABLE_DELAY_ID):
@@ -45,6 +49,10 @@ def physical_blocks(rep: Representation):
                 continue
             base = rep.base_block(block_id).block
             block = PulseqBlock(block_duration=duration, trig=[SimpleNamespace(**vars(t)) for t in base.trig])
+            if any(t.type == "output" for t in base.trig):
+                if inst.trig_enable is not None and inst.trig_enable[n_trig] == 0:
+                    block.trig = [t for t in block.trig if t.type != "output"]
+                n_trig += 1
             shim = rotation = None
             if base.rf is not None:
                 rf = SimpleNamespace(**vars(base.rf))
@@ -117,6 +125,9 @@ def write(rep: Representation, seqfile=None, *, strict: bool = False, verbose: b
     ------
     ValidationError
         With ``strict``, for an invalid representation.
+    NotImplementedError
+        Where ``adc_acquire`` is 0: Pulseq has no readout that is played but
+        not stored.
     """
     if strict:
         validate_ir(rep)
