@@ -106,9 +106,8 @@ def write(rep: Representation, seqfile=None, *, strict: bool = False, verbose: b
     verbose : bool, default=False
         Print a summary.
     system : pypulseqpp.Opts, optional
-        Scanner limits and rasters; pypulseqpp's defaults if omitted. Pass
-        the system the source sequence was built with, since arbitrary
-        gradient durations are rebuilt on its gradient raster.
+        Limits and rasters of the written sequence; ``rep.system`` if
+        omitted, which :func:`read` sets to the source's system.
 
     Returns
     -------
@@ -121,6 +120,7 @@ def write(rep: Representation, seqfile=None, *, strict: bool = False, verbose: b
     """
     if strict:
         validate_ir(rep)
+    system = rep.system if system is None else system
     seq = pp.Sequence(system) if system is not None else pp.Sequence()
     state = {f: 0 for f in PRESCRIPTION_FLAGS}
     previous = None

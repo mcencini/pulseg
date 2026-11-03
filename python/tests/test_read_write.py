@@ -83,12 +83,12 @@ def test_the_execution_stream_plays_every_block():
 
 def test_a_round_trip_plays_the_same_waveforms():
     seq = gradient_echo()
-    assert_same_waveforms(seq, pulseg.write(pulseg.read(seq), system=pp.Opts()))
+    assert_same_waveforms(seq, pulseg.write(pulseg.read(seq)))
 
 
 def test_a_round_trip_keeps_rf_and_adc_phase_offsets():
     seq = gradient_echo()
-    back = pulseg.write(pulseg.read(seq), system=pp.Opts())
+    back = pulseg.write(pulseg.read(seq))
     for i in range(1, seq.num_blocks + 1):
         a, b = seq.get_block(i), back.get_block(i)
         if a.rf is not None:
@@ -99,7 +99,7 @@ def test_a_round_trip_keeps_rf_and_adc_phase_offsets():
 
 def test_a_rotated_block_plays_back_as_the_same_physical_gradients():
     seq = gradient_echo(rotate=True)
-    assert_same_waveforms(seq, pulseg.write(pulseg.read(seq), system=pp.Opts()))
+    assert_same_waveforms(seq, pulseg.write(pulseg.read(seq)))
 
 
 def _delay_ids(rep):
@@ -133,7 +133,7 @@ def test_a_norot_block_sets_the_instance_flag_and_survives_a_round_trip():
     assert rep.pulseg_version == "2.2-alpha"
     assert rep.execution_stream[-1].norot == 1
     pulseg.validate_ir(rep)
-    back = pulseg.write(rep, system=pp.Opts())
+    back = pulseg.write(rep)
     labels = back.evaluate_labels(init={"NOROT": 0}, evolution="blocks")["NOROT"]
     assert labels[-1] == 1 and labels[0] == 0
 
@@ -149,7 +149,7 @@ def test_read_records_the_path_of_a_seq_file(tmp_path):
 def test_write_writes_a_file_that_reads_back_as_the_same_scan(tmp_path):
     seq = gradient_echo()
     path = tmp_path / "out.seq"
-    pulseg.write(pulseg.read(seq), path, strict=True, system=pp.Opts())
+    pulseg.write(pulseg.read(seq), path, strict=True)
     back = pp.Sequence()
     back.read(str(path))
     assert_same_waveforms(seq, back)
@@ -180,7 +180,7 @@ def test_interleaves_on_one_timing_are_shot_variants_of_one_base_block():
 
 def test_shot_variants_play_back_as_the_shapes_they_were_drawn_with():
     seq = spiral_interleaves()
-    assert_same_waveforms(seq, pulseg.write(pulseg.read(seq), system=pp.Opts()))
+    assert_same_waveforms(seq, pulseg.write(pulseg.read(seq)))
 
 
 def test_a_scaled_copy_of_a_shape_is_not_a_new_shot():
@@ -202,3 +202,23 @@ def test_stream2loop_has_one_row_per_block_with_its_scales():
     np.testing.assert_allclose(
         loop[:, 13], [seq.get_block(i).block_duration for i in range(1, seq.num_blocks + 1)]
     )
+
+
+def test_read_and_write_follow_the_rasters_a_seq_file_records(tmp_path):
+    system = pp.Opts(grad_raster_time=1e-5, block_duration_raster=1e-5, rf_raster_time=1e-6)
+    seq = pp.Sequence(system)
+    shape = np.sin(np.linspace(0, np.pi, 30))
+    seq.add_block(pp.make_arbitrary_grad("x", 1e5 * shape, first=0, last=0, system=system))
+    path = tmp_path / "fine.seq"
+    seq.write(str(path))
+    rep = pulseg.read(path)
+    assert rep.system.grad_raster_time == pytest.approx(1e-5)
+    source, back = seq.get_block(1).gx, pulseg.write(rep).get_block(1).gx
+    on_back = np.interp(source.tt, back.tt, back.waveform)
+    np.testing.assert_allclose(on_back, source.waveform, rtol=0, atol=1e-5 * 1e5)
+
+
+def test_write_defaults_to_the_system_the_sequence_was_read_under():
+    seq = spiral_interleaves()
+    rep = pulseg.read(seq)
+    assert rep.system is seq.system

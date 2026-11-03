@@ -24,21 +24,22 @@ pytest
 ## Usage
 
 ```python
-import pypulseqpp as pp
 import pulseg
 
-system = pp.Opts()
-rep = pulseg.read("gre.seq", system)  # Pulseq file or pypulseqpp.Sequence -> PulSeg
+rep = pulseg.read("gre.seq")  # Pulseq file or pypulseqpp.Sequence -> PulSeg
 pulseg.validate_ir(rep)  # raises ValidationError listing every problem
-seq = pulseg.write(rep, "gre_roundtrip.seq", system=system)
+seq = pulseg.write(rep, "gre_roundtrip.seq")
 loop = pulseg.stream2loop(rep)  # one row per block, the MATLAB column layout
 ```
 
 `read` hands the sequence to pulserver (`pulserver.ir.convert`) and plays the result back
 (`pulserver.ir.play`), so pulseg and the pulserver interpreter see the same segmentation.
 Each pulserver segment is one virtual segment, and each of its block positions one base
-block. `write` plays a representation back as a Pulseq sequence; pass the `system` the
-source was built with, since arbitrary gradients are rebuilt on its gradient raster.
+block. `write` plays a representation back as a Pulseq sequence.
+
+Both use the sequence's own system unless given one: `seq.system` for an in-memory
+sequence, or the rasters a `.seq` file's `[DEFINITIONS]` record. `read` keeps it as
+`rep.system`, which `write` then uses.
 
 The remaining functions mirror the MATLAB toolbox in `matlab/+pulseg`:
 `validate_ir`, `check_pulseq_block`, `check_base_blocks`, `normalize_block`,

@@ -172,6 +172,9 @@ class Representation:
     source_file : str or None
     creation_date : str or None
         ISO 8601 date.
+    system : pypulseqpp.Opts or None
+        Limits and rasters the source sequence was built with; not part of
+        the specification.
     """
 
     pulseg_version: str
@@ -180,6 +183,7 @@ class Representation:
     execution_stream: list[SegmentInstance]
     source_file: str | None = None
     creation_date: str | None = None
+    system: object | None = None
 
     def base_block(self, block_id: int) -> BaseBlock:
         """Return the explicit base block with this ID.

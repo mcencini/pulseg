@@ -114,6 +114,37 @@ def _gradient_events(tt, shape, shots) -> dict:
     return events
 
 
+_RASTERS = {
+    "rf_raster_time": "RadiofrequencyRasterTime",
+    "grad_raster_time": "GradientRasterTime",
+    "adc_raster_time": "AdcRasterTime",
+    "block_duration_raster": "BlockDurationRaster",
+}
+
+
+def sequence_system(seq) -> pp.Opts:
+    """Return the system a sequence was built with.
+
+    Parameters
+    ----------
+    seq : pypulseqpp.Sequence
+
+    Returns
+    -------
+    pypulseqpp.Opts
+        ``seq.system`` if set; otherwise the rasters the sequence's
+        ``[DEFINITIONS]`` record, on pypulseqpp's defaults for the rest.
+    """
+    if seq.system is not None:
+        return seq.system
+    rasters = {}
+    for field, name in _RASTERS.items():
+        value = seq.get_definition(name)
+        if value:
+            rasters[field] = float(value[0])
+    return pp.Opts(**rasters)
+
+
 def read(seq, system=None, *, verbose: bool = False) -> Representation:
     """Read a Pulseq sequence or ``.seq`` file into a PulSeg representation.
 
@@ -133,8 +164,8 @@ def read(seq, system=None, *, verbose: bool = False) -> Representation:
     seq : pypulseqpp.Sequence or str or pathlib.Path
         The sequence, or the path of a ``.seq`` file.
     system : pypulseqpp.Opts, optional
-        Limits and rasters the sequence is segmented under; ``pypulseqpp.Opts()``
-        if omitted.
+        Limits and rasters the sequence is segmented under; the sequence's
+        own (:func:`sequence_system`) if omitted.
     verbose : bool, default=False
         Print a summary.
 
@@ -149,12 +180,17 @@ def read(seq, system=None, *, verbose: bool = False) -> Representation:
     ValueError
         If pulserver cannot segment the sequence.
     """
-    system = pp.Opts() if system is None else system
     source_file = None
+    if isinstance(seq, str | Path):
+        source_file = str(seq)
+        loaded = pp.Sequence()
+        loaded.read(source_file)
+    else:
+        loaded = seq
+    system = sequence_system(loaded) if system is None else system
     with tempfile.TemporaryDirectory() as folder:
-        if isinstance(seq, str | Path):
-            source_file = str(seq)
-            path = Path(seq)
+        if source_file is not None:
+            path = Path(source_file)
         else:
             path = Path(folder) / "sequence.seq"
             seq.write(str(path))
@@ -166,6 +202,7 @@ def read(seq, system=None, *, verbose: bool = False) -> Representation:
             cache.unlink(missing_ok=True)
     rep = _representation(summary["segments"], played, system)
     rep.source_file = source_file
+    rep.system = system
     if verbose:
         print(
             f"read: {len(played['segment'])} blocks, {len(rep.base_blocks)} base blocks, "
