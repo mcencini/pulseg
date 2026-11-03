@@ -222,6 +222,16 @@ function validate_ir(pulseg_ir)
                 '%s.physio_trigger must be 0 or 1.', inst_name);
         end
 
+        %% Optional gradient_shot_index
+
+        if isfield(inst, 'gradient_shot_index') && ~isempty(inst.gradient_shot_index)
+            shots = inst.gradient_shot_index;
+            check_numeric_vector(shots, sprintf('%s.gradient_shot_index', inst_name), counts.n_grad);
+            assert(all(shots(:) == round(shots(:))) && all(shots(:) >= 0) && ...
+                all(shots(:) < counts.n_shots(:)), ...
+                '%s.gradient_shot_index selects a shot variant its base block does not carry.', inst_name);
+        end
+
         %% Optional 2.2.0 instance fields
 
         check_v22_fields(inst, inst_name, counts, char(pulseg_ir.pulseg_version));
@@ -314,6 +324,7 @@ function counts = count_events_in_virtual_segment(vs, base_blocks)
     counts.n_grad = 0;
     counts.n_adc = 0;
     counts.n_trig = 0;
+    counts.n_shots = [];
 
     for j = 1:numel(ids)
         id = ids(j);
@@ -336,6 +347,7 @@ function counts = count_events_in_virtual_segment(vs, base_blocks)
 
         if has_event(b, 'gx') || has_event(b, 'gy') || has_event(b, 'gz')
             counts.n_grad = counts.n_grad + 1;
+            counts.n_shots(end+1) = num_shots(b);
         end
 
         if has_event(b, 'adc')
@@ -344,6 +356,20 @@ function counts = count_events_in_virtual_segment(vs, base_blocks)
 
         if has_output_trigger(b)
             counts.n_trig = counts.n_trig + 1;
+        end
+    end
+end
+
+
+function n = num_shots(b)
+% NUM_SHOTS Number of shot variants a base block's gradients carry (1 without variants).
+
+    n = 1;
+    axes = {'gx', 'gy', 'gz'};
+    for ii = 1:numel(axes)
+        if has_event(b, axes{ii}) && isfield(b.(axes{ii}), 'shot_waveforms') ...
+                && ~isempty(b.(axes{ii}).shot_waveforms)
+            n = max(n, size(b.(axes{ii}).shot_waveforms, 1));
         end
     end
 end
@@ -456,6 +482,15 @@ function check_base_block_normalization(b, bb_name)
                 assert(abs(g_peak - 1) <= tol, ...
                     '%s.block.%s.waveform is nonzero but peak is not 1. max(abs(waveform)) = %.6g.', ...
                     bb_name, gname, g_peak);
+            end
+        end
+
+        if isfield(g, 'shot_waveforms') && ~isempty(g.shot_waveforms)
+            for shot = 1:size(g.shot_waveforms, 1)
+                peak = max(abs(g.shot_waveforms(shot, :)));
+                assert(peak <= tol || abs(peak - 1) <= tol, ...
+                    '%s.block.%s shot variant %d is not normalized. Peak = %.6g.', ...
+                    bb_name, gname, shot - 1, peak);
             end
         end
 

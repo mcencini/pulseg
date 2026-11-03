@@ -31,8 +31,10 @@ function seq = write_seq(pulseg_ir, seqfile, varargin)
 %   adc_acquire an entry of 0 is refused: Pulseq has no readout that is
 %               played but not stored.
 %
+% Rotations are emitted as mr.makeRotation events, and each gradient event
+% plays the shot variant gradient_shot_index selects.
+%
 % Limitations
-%   - Non-identity gradient rotation matrices are not yet exported.
 %   - physio_trigger is not yet exported.
 %   - Segment labels/TRID labels are not yet regenerated.
 %
@@ -167,14 +169,17 @@ for k = 1:n_instances
             grad_i = grad_i + 1;
 
             R = get_rotation_matrix_for_event(inst, grad_i);
-
-            if ~is_identity_matrix(R)
-                error(['Non-identity gradient rotation encountered at execution_stream(%d), ' ...
-                       'block %d, gradient event %d. Rotation export is not implemented yet.'], ...
-                       k, j, grad_i);
+            shot = 0;
+            if isfield(inst, 'gradient_shot_index') && ~isempty(inst.gradient_shot_index)
+                shot = inst.gradient_shot_index(grad_i);
             end
 
             gscale = inst.gradient_amplitude(grad_i, :);
+            for a = {'gx', 'gy', 'gz'}
+                if has_event(b, a{1})
+                    b.(a{1}) = select_shot(b.(a{1}), shot);
+                end
+            end
 
             if has_event(b, 'gx')
                 b.gx = scale_gradient_event(b.gx, gscale(1));
@@ -199,6 +204,10 @@ for k = 1:n_instances
         end
 
         events = block_to_events(b);
+
+        if has_grad && ~is_identity_matrix(R)
+            events{end+1} = mr.makeRotation(R);
+        end
 
         if has_rf && isfield(inst, 'rf_shim') && ~isempty(inst.rf_shim)
             events{end+1} = mr.makeRfShim(inst.rf_shim(rf_i, :));
@@ -339,6 +348,21 @@ function adc = set_adc_offsets(adc, phase_offset, frequency_offset)
 
 adc.phaseOffset = phase_offset;
 adc.freqOffset = frequency_offset;
+
+return
+
+function g = select_shot(g, shot)
+% SELECT_SHOT Replace a multishot gradient's waveform by one shot variant (0-based).
+
+if ~isfield(g, 'shot_waveforms') || isempty(g.shot_waveforms)
+    assert(shot == 0, 'Shot %d requested from a gradient with one shot variant.', shot);
+    return;
+end
+shape = size(g.waveform);
+g.waveform = reshape(g.shot_waveforms(shot + 1, :), shape);
+g.first = g.shot_first(shot + 1);
+g.last = g.shot_last(shot + 1);
+g = rmfield(g, intersect(fieldnames(g), {'shot_waveforms', 'shot_first', 'shot_last'}));
 
 return
 
