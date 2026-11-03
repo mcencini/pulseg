@@ -6,9 +6,9 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from ._blocks import check_pulseq_block, num_shots
 from ._model import (
     CONSTANT_DELAY_ID,
-    GRADIENT_AXES,
     SUPPORTED_VERSIONS,
     VARIABLE_DELAY_ID,
     PulseqBlock,
@@ -18,7 +18,6 @@ from ._model import (
 
 V22_FIELDS = ("rf_shim", "adc_acquire", "trig_enable")
 V22_FLAGS = ("norot", "nopos", "pmc")
-NORMALIZATION_TOLERANCE = 1e-6
 
 
 class ValidationError(ValueError):
@@ -46,6 +45,7 @@ class EventCounts:
     grad: int
     adc: int
     trig: int
+    shots: tuple[int, ...] = ()
 
 
 def has_output_trigger(block: PulseqBlock) -> bool:
@@ -68,15 +68,18 @@ def count_events(rep: Representation, base_block_ids: list[int]) -> EventCounts:
     EventCounts
     """
     rf = grad = adc = trig = 0
+    shots = []
     for block_id in base_block_ids:
         if block_id in (CONSTANT_DELAY_ID, VARIABLE_DELAY_ID):
             continue
         block = rep.base_block(block_id).block
         rf += block.rf is not None
         grad += block.has_gradient
+        if block.has_gradient:
+            shots.append(num_shots(block))
         adc += block.adc is not None
         trig += has_output_trigger(block)
-    return EventCounts(len(base_block_ids), rf, grad, adc, trig)
+    return EventCounts(len(base_block_ids), rf, grad, adc, trig, tuple(shots))
 
 
 def _check_array(problems, name, value, shape, finite=True):
@@ -87,27 +90,6 @@ def _check_array(problems, name, value, shape, finite=True):
     if finite and array.size and not np.all(np.isfinite(array)):
         problems.append(f"{name} contains non-finite values.")
     return array
-
-
-def _check_base_block(problems, name, block: PulseqBlock):
-    if not np.isfinite(block.block_duration) or block.block_duration < 0:
-        problems.append(f"{name} has block_duration {block.block_duration}, expected finite and >= 0.")
-    if block.is_pure_delay:
-        problems.append(f"{name} is a pure delay; pure delays use the reserved IDs 0 and 1.")
-    if block.rf is not None:
-        peak = np.max(np.abs(np.asarray(block.rf.signal))) if np.size(block.rf.signal) else 0.0
-        if peak > 0 and abs(peak - 1.0) > NORMALIZATION_TOLERANCE:
-            problems.append(f"{name}.rf has peak magnitude {peak:g}, expected 1.")
-    for axis in GRADIENT_AXES:
-        grad = getattr(block, axis)
-        if grad is None:
-            continue
-        if grad.type == "trap":
-            peak = abs(grad.amplitude)
-        else:
-            peak = np.max(np.abs(np.asarray(grad.waveform))) if np.size(grad.waveform) else 0.0
-        if peak > 0 and abs(peak - 1.0) > NORMALIZATION_TOLERANCE:
-            problems.append(f"{name}.{axis} has peak amplitude {peak:g}, expected 1.")
 
 
 def _check_instance(problems, name, inst: SegmentInstance, counts: EventCounts, version: str):
@@ -124,8 +106,14 @@ def _check_instance(problems, name, inst: SegmentInstance, counts: EventCounts, 
         shots = _check_array(
             problems, f"{name}.gradient_shot_index", inst.gradient_shot_index, (counts.grad,)
         )
-        if shots is not None and shots.size and np.any(shots != 0):
-            problems.append(f"{name}.gradient_shot_index selects a shot variant no base block defines.")
+        if (
+            shots is not None
+            and shots.size
+            and (np.any(shots < 0) or np.any(shots >= np.array(counts.shots)))
+        ):
+            problems.append(
+                f"{name}.gradient_shot_index selects a shot variant its base block does not carry."
+            )
     if inst.rotation_matrix is not None:
         rotations = _check_array(
             problems, f"{name}.rotation_matrix", inst.rotation_matrix, (counts.grad, 3, 3)
@@ -189,7 +177,8 @@ def find_problems(rep: Representation) -> list[str]:
     for base in rep.base_blocks:
         if base.id < 2:
             problems.append(f"base block ID {base.id} is below 2; 0 and 1 are reserved pure delays.")
-        _check_base_block(problems, f"base_blocks[id={base.id}].block", base.block)
+        _, report = check_pulseq_block(base.block, f"base_blocks[id={base.id}].block", error_on_fail=False)
+        problems += report.errors
 
     segment_ids = [s.id for s in rep.virtual_segments]
     if len(set(segment_ids)) != len(segment_ids):
@@ -232,7 +221,7 @@ def find_problems(rep: Representation) -> list[str]:
     return problems
 
 
-def validate(rep: Representation) -> None:
+def validate_ir(rep: Representation) -> None:
     """Raise if a representation breaks the specification.
 
     Parameters

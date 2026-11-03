@@ -21,16 +21,33 @@ pytest
 
 ## Usage
 
+The functions mirror the MATLAB toolbox in `matlab/+pulseg`, with Python naming.
+`import` is a Python keyword, so the MATLAB `pulseg.import` is `pulseg.import_`.
+
 ```python
+import pypulseqpp as pp
 import pulseg
 
-rep = pulseg.read_seq("gre.seq")  # Pulseq file -> PulSeg representation
-pulseg.validate(rep)  # raises ValidationError listing every problem
-seq = pulseg.to_sequence(rep)  # back to a pypulseqpp Sequence
-seq.write("gre_roundtrip.seq")
+rep = pulseg.import_("gre.seq")  # Pulseq file or pypulseqpp.Sequence -> PulSeg
+pulseg.validate_ir(rep)  # raises ValidationError listing every problem
+seq = pulseg.write_seq(rep, "gre_roundtrip.seq", system=pp.Opts())
+loop = pulseg.stream2loop(rep)  # one row per block, the MATLAB column layout
 ```
 
-`pulseg.from_sequence(seq)` converts an in-memory `pypulseqpp.Sequence`.
+| MATLAB | Python |
+| --- | --- |
+| `pulseg.import` | `pulseg.import_` |
+| `pulseg.validate_ir` | `pulseg.validate_ir`, `pulseg.find_problems` |
+| `pulseg.check_pulseq_block` | `pulseg.check_pulseq_block` |
+| `pulseg.check_base_blocks` | `pulseg.check_base_blocks` |
+| `pulseg.normalize_block` | `pulseg.normalize_block` |
+| `pulseg.compare_normalized_blocks` | `pulseg.compare_normalized_blocks` |
+| `pulseg.get_grad_energy` | `pulseg.get_grad_energy` |
+| `pulseg.write_seq` | `pulseg.write_seq` |
+| `pulseg.stream2loop` | `pulseg.stream2loop` |
+
+`write_seq` rebuilds arbitrary gradients on the gradient raster of `system`; pass the
+system the source sequence was built with.
 
 ## Segment boundaries
 
@@ -41,6 +58,19 @@ same sequence of base blocks play one virtual segment. A pure delay is base bloc
 its duration differs between the instances of its virtual segment, and base block 0
 otherwise.
 
+## Gradient shot variants
+
+A base block is identified by the shapes of its RF and ADC events and by the timing of
+its gradients. Arbitrary gradients that share a timing but differ in shape after
+normalization, such as independently designed spiral interleaves, become shot variants
+of one base block, and each segment instance selects one through `gradient_shot_index`.
+A scaled copy of a waveform is the same shot with a different gradient amplitude.
+
+## Soft delays
+
+Pass the value entered at the console, in ms, as `import_(..., soft_delay_input_ms=...)`.
+Every soft delay resolves to `input / factor + offset`.
+
 ## Specification versions
 
 `pulseg.SUPPORTED_VERSIONS` lists the versions the validator accepts: 2.1-alpha and the
@@ -49,9 +79,8 @@ only 2.2-alpha defines (`rf_shim`, `norot`, `nopos`, `pmc`, `adc_acquire`, `trig
 
 ## Not yet supported
 
-- Gradient shot variants: every gradient shape is its own base block, so
-  `gradient_shot_index` is always 0.
-- Soft delays and RF or ADC offsets given in ppm; resolve them in the sequence first.
+- RF or ADC offsets given in ppm.
+- `translateFOVrf`.
 - A stored file format: representations live in memory.
 
 ## Release

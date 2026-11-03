@@ -8,14 +8,14 @@ import pulseg
 
 def test_a_well_formed_representation_has_no_problems(representation):
     assert pulseg.find_problems(representation) == []
-    pulseg.validate(representation)
+    pulseg.validate_ir(representation)
 
 
 def test_validate_reports_every_problem_at_once(representation):
     representation.pulseg_version = "9.9"
     representation.base_blocks[0].id = 1
     with pytest.raises(pulseg.ValidationError) as error:
-        pulseg.validate(representation)
+        pulseg.validate_ir(representation)
     assert len(error.value.problems) >= 2
 
 
@@ -80,7 +80,7 @@ def _break_physio_flag(rep):
     rep.execution_stream[0].physio_trigger = 2
 
 
-def _break_shot_index(rep):
+def _break_shot_index(rep):  # the readout carries one shot
     rep.execution_stream[0].gradient_shot_index = np.array([1])
 
 
