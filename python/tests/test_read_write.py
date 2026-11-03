@@ -130,7 +130,7 @@ def test_a_norot_block_sets_the_instance_flag_and_survives_a_round_trip():
     seq = gradient_echo(n_lines=2)
     seq.add_block(pp.make_label("NOROT", "SET", True), pp.make_trapezoid("z", area=100, duration=1e-3))
     rep = pulseg.read(seq)
-    assert rep.pulseg_version == "2.2-alpha"
+    assert rep.pulseg_version == "2.2.0"
     assert rep.execution_stream[-1].norot == 1
     pulseg.validate_ir(rep)
     back = pulseg.write(rep)

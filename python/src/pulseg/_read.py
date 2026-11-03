@@ -172,8 +172,7 @@ def read(seq, system=None, *, verbose: bool = False) -> Representation:
     Returns
     -------
     Representation
-        Version 2.1-alpha, or 2.2-alpha where an instance sets ``NOROT`` or
-        ``NOPOS``.
+        Version 2.2.0.
 
     Raises
     ------
@@ -276,9 +275,8 @@ def _representation(segments, played, system) -> Representation:
                 nopos=int(played["nopos"][blocks.start]),
             )
         )
-    uses_flags = any(i.norot or i.nopos for i in stream)
     return Representation(
-        pulseg_version="2.2-alpha" if uses_flags else "2.1-alpha",
+        pulseg_version="2.2.0",
         base_blocks=base_blocks,
         virtual_segments=virtual_segments,
         execution_stream=stream,

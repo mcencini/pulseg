@@ -64,9 +64,8 @@ Amplitudes and shapes come from pulserver in single precision.
 
 ## Specification versions
 
-`pulseg.SUPPORTED_VERSIONS` lists the versions the validator accepts: 2.1-alpha and the
-2.2-alpha draft. `read` writes 2.1-alpha unless an instance sets `NOROT` or `NOPOS`,
-which only 2.2-alpha defines.
+`pulseg.SUPPORTED_VERSIONS` lists the versions the validator accepts: 2.1-alpha and 2.2.0
+([`docs/spec.md`](../docs/spec.md)). `read` writes 2.2.0.
 
 ## Not yet supported
 

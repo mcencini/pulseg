@@ -129,8 +129,8 @@ def _check_instance(problems, name, inst: SegmentInstance, counts: EventCounts, 
 
     used_v22 = [f for f in V22_FIELDS if getattr(inst, f) is not None]
     used_v22 += [f for f in V22_FLAGS if getattr(inst, f) != 0]
-    if used_v22 and version != "2.2-alpha":
-        problems.append(f"{name} sets {', '.join(used_v22)}, which require pulseg_version 2.2-alpha.")
+    if used_v22 and version != "2.2.0":
+        problems.append(f"{name} sets {', '.join(used_v22)}, which require pulseg_version 2.2.0.")
     if inst.rf_shim is not None:
         shim = np.asarray(inst.rf_shim)
         if shim.ndim != 2 or shim.shape[0] != counts.rf:

@@ -22,7 +22,7 @@ function pulseg_ir = import(seqarg, varargin)
 
 import pulseg.*
 
-pulseg_ir.pulseg_version = '2.0-alpha';
+pulseg_ir.pulseg_version = '2.2.0';
 
 pulseg_ir.creation_date = char(datetime('today', 'Format', 'yyyy-MM-dd'));
 

@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
-SUPPORTED_VERSIONS = ("2.1-alpha", "2.2-alpha")
+SUPPORTED_VERSIONS = ("2.1-alpha", "2.2.0")
 """Specification versions this package reads and validates."""
 
 CONSTANT_DELAY_ID = 0
@@ -121,16 +121,16 @@ class SegmentInstance:
     rotation_matrix : numpy.ndarray or None
         ``(n_grad, 3, 3)`` rotation applied after scaling; None means identity.
     rf_shim : numpy.ndarray or None
-        ``(n_rf, n_channels)`` complex weight per transmit channel (2.2-alpha);
+        ``(n_rf, n_channels)`` complex weight per transmit channel (2.2.0);
         None means unit weights.
     adc_acquire : numpy.ndarray or None
-        ``(n_adc,)``, 0 where the readout is played but not stored (2.2-alpha);
+        ``(n_adc,)``, 0 where the readout is played but not stored (2.2.0);
         None means 1 everywhere.
     trig_enable : numpy.ndarray or None
         ``(n_trig_blocks,)``, 0 where the block's output triggers do not fire
-        (2.2-alpha); None means 1 everywhere.
+        (2.2.0); None means 1 everywhere.
     norot, nopos, pmc : int
-        Pulseq ``NOROT``, ``NOPOS`` and ``PMC`` flags of the instance (2.2-alpha).
+        Pulseq ``NOROT``, ``NOPOS`` and ``PMC`` flags of the instance (2.2.0).
     physio_trigger : int
         1 if the instance waits for a physiological trigger.
     label : str or None

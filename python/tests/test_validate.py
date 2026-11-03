@@ -111,7 +111,7 @@ def test_each_violation_is_reported(representation, breaker):
 
 
 def test_v22_fields_are_accepted_under_v22(representation):
-    representation.pulseg_version = "2.2-alpha"
+    representation.pulseg_version = "2.2.0"
     inst = representation.execution_stream[0]
     inst.norot = 1
     inst.adc_acquire = np.array([0])

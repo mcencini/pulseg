@@ -1,5 +1,5 @@
 function validate_ir(pulseg_ir)
-% VALIDATE_IR Validate a PulSeg 2.0-alpha intermediate representation struct.
+% VALIDATE_IR Validate a PulSeg intermediate representation struct (2.0-alpha to 2.2.0).
 %
 % Syntax:
 %   pulseg.validate_ir(pulseg_ir)
@@ -31,11 +31,12 @@ function validate_ir(pulseg_ir)
     assert(ischar(pulseg_ir.pulseg_version) || isstring(pulseg_ir.pulseg_version), ...
         'pulseg_version must be a string.');
 
-    assert(strcmp(char(pulseg_ir.pulseg_version), '2.0-alpha'), ...
-        'pulseg_version must be ''2.0-alpha''. Found ''%s''.', char(pulseg_ir.pulseg_version));
+    supported = {'2.0-alpha', '2.1-alpha', '2.2.0'};
+    assert(any(strcmp(char(pulseg_ir.pulseg_version), supported)), ...
+        'pulseg_version must be one of %s. Found ''%s''.', strjoin(supported, ', '), char(pulseg_ir.pulseg_version));
 
     assert(~isempty(pulseg_ir.base_blocks), ...
-        'base_blocks must be non-empty for PulSeg 2.0-alpha.');
+        'base_blocks must be non-empty.');
 
     assert(~isempty(pulseg_ir.virtual_segments), ...
         'virtual_segments must be non-empty.');

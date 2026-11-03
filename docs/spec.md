@@ -2,9 +2,9 @@
 
 # PulSeg Intermediate Representation Specification
 
-**Version:** 2.1-alpha  
-**Date:** 2026-06-18  
-**Status:** Initial Release  
+**Version:** 2.2.0  
+**Date:** 2026-11-04  
+**Status:** Draft proposal  
 **Authors:** Jon-Fredrik Nielsen, Matteo Cencini  
 **Repository:** https://github.com/HarmonizedMRI/pulseg
 
@@ -22,9 +22,13 @@ This document defines the PulSeg data structures, terminology, and conversion re
 It is intended for developers of sequence conversion tools, scanner interpreters, and 
 simulation frameworks.
 
-This specification is stable at version 2.1-alpha. Any change affecting data structure definitions, 
+This specification is stable at version 2.2.0. Any change affecting data structure definitions, 
 field semantics, or required fields must increment the version number and include 
-migration notes in the changelog (see Section 7).
+migration notes in the changelog (see Section 6).
+
+Implementations MAY include additional fields not defined in this specification. Compliant
+readers SHOULD ignore unknown fields unless they conflict with required PulSeg semantics.
+Such fields MUST NOT be required for interpreting the core IR.
 
 ---
 
@@ -64,6 +68,10 @@ migration notes in the changelog (see Section 7).
 All field names use snake_case. Fields marked **(required)** must be present in any 
 compliant PulSeg representation. Fields marked **(optional)** may be omitted.
 
+Durations are in seconds, phase offsets in radians, frequency offsets in Hz, and RF and
+gradient amplitude scale factors in the native units of the source sequence. A stored
+representation MAY use other units and numeric formats if it declares them (Section 3.5).
+
 ### 3.1 BaseBlock
 
 A base block wraps a single Pulseq block with normalized waveform amplitudes. A base block is
@@ -78,12 +86,23 @@ event carries more than one transmit channel (see the normalization rules).
 | `block` | PulseqBlock | required | A Pulseq block with all waveform amplitudes normalized to 1.0 (or 0.0 for unused channels). See normalization rules below. |
 | `name` | string | optional | Human-readable descriptive label (e.g., `"rf_prep"`, `"gx_spoil"`). |
 
+A base block contains at most one each of `rf`, `gx`, `gy`, `gz`, `adc` and `trig`, where
+`trig` is an output trigger (channel, delay, duration). Its delay and duration are part of the
+block's timing, which a backend prepares with the segment; whether it fires is set per
+instance by `trig_enable`. A base block with ID ≥ 2 MUST contain at least one event; pure
+delays are represented only by the reserved IDs below and do not appear in `base_blocks`.
+
 **Reserved Identifiers:**  
 To support real-time timing optimizations on scanner hardware, the following base block IDs are globally reserved and implicitly defined across all PulSeg implementations:
 
 - id == 0 (Implicit Constant Delay Block): Represents a pure delay block whose duration remains fixed and invariant across all instances in the execution stream. This allows hardware interpreters to pre-compute structural timing gaps.
 
 - id == 1 (Implicit Variable Delay Block): Represents a pure delay block whose duration can vary dynamically between different instances in the execution stream (e.g., for extending TE or TR). The runtime duration is dictated explicitly by the corresponding entry in the instance's block_duration array.
+
+Whether a pure delay is constant or variable follows from the execution stream: it is
+variable if its `block_duration` differs between instances of its virtual segment. A stored
+representation MAY therefore omit the reserved IDs and let the reader assign them on loading
+(Section 3.5).
 
 **Normalization rules:**
 - Single-channel RF waveforms: Normalize by peak magnitude, such that `max(|rf.signal|) == 1.0`.
@@ -93,6 +112,7 @@ $\max_{c}(\max(\lvert\text{rf.signal}_c\rvert)) == 1.0$.
 This ensures that the relative amplitude between distinct physical transmit coils are strictly preserved.
 - Gradient waveforms: normalize each channel independently by peak absolute amplitude, such that `max(|grad.waveform|) == 1.0` for each channel. A gradient event MAY carry multiple co-timed *shot variants* — gradient shapes sharing one timing structure but differing in sample values, e.g. independently optimized spiral interleaves — and each shot variant is normalized independently (peak `1.0` per variant). Two gradient waveforms share a *timing structure* when they have identical `(delay, rise, flat, fall)` for trapezoids, `(delay, time_shape_id)` for extended trapezoids, or `(delay, num_samples)` on the gradient raster for uniform-raster arbitrary gradients. Shot variants are reserved for shapes NOT related by scaling or rotation; families related by scaling or rotation (phase-encode blips, radial spokes, rotated interleaves) MUST use a single shot variant scaled via `gradient_amplitude` / `rotation_matrix`. The single-shot case is the common one.
 - ADC windows: not normalized; copied directly from the Pulseq block
+- Output triggers: not normalized; copied directly from the Pulseq block
 - A channel with no waveform in the original block must have no waveform in the base block
 
 ### 3.2 VirtualSegment
@@ -121,12 +141,18 @@ single execution in the execution stream.
 | `rf_amplitude` | float[] | required | Scaling factors for RF waveform amplitudes, one per RF event in the virtual segment. Multiply by the normalized base block RF amplitude to recover the physical amplitude. |
 | `rf_phase_offset` | float[] | required | RF phase offsets in radians, one per RF event in the virtual segment. |
 | `rf_frequency_offset` | float[] | required | RF transmit frequency offset in Hz, one per RF event in the virtual segment. |
-| `gradient_amplitude` | float[3][] | required | Signed scaling factors for gradient amplitudes (Gx, Gy, Gz), one triplet per gradient event in the virtual segment. Negative values indicate polarity inversion relative to the normalized base block. |
+| `gradient_amplitude` | float[N_grad][3] | required | Signed scaling factors for gradient amplitudes, one row `[sx, sy, sz]` per gradient event in the virtual segment. Negative values indicate polarity inversion relative to the normalized base block. |
 | `gradient_shot_index` | int[] | optional | Selected shot variant for each gradient event (see BaseBlock, Section 3.1), one per gradient event. Defaults to 0 — the first/only shot — if omitted. |
+| `rf_shim` | float[N_rf][N_ch][2] | optional | Per-channel shim (magnitude, phase in radians), one set per RF event. Defaults to 1 and 0. |
 | `adc_phase_offset` | float[] | required | ADC receiver phase offsets in radians, one per ADC event in the virtual segment. |
 | `adc_frequency_offset` | float[] | required | ADC receiver frequency offset in Hz, one per ADC event in the virtual segment. |
+| `adc_acquire` | int[] | optional | 0 if the readout is played but not stored (e.g. dummy scans), one per ADC event. Defaults to 1. |
+| `trig_enable` | int[] | optional | 0 if the output trigger does not fire, one per `trig` event. Defaults to 1. |
 | `block_duration` | float[] | required | Pulseq block duration in seconds, one per block in the virtual segment. |
-| `rotation_matrix` | float[3][3][] | optional | 3D spatial rotation matrices applied to the gradient axes, one per gradient event in the virtual segment. Defaults to identity if omitted.|
+| `rotation_matrix` | float[3][3][N_grad] | optional | 3D spatial rotation matrices applied to the gradient axes, one per gradient event in the virtual segment. Defaults to identity if omitted.|
+| `norot` | int | optional | 1 if the prescription's rotation is not applied (Pulseq `NOROT`). Defaults to 0. |
+| `nopos` | int | optional | 1 if the prescription's offset is not applied (Pulseq `NOPOS`). Defaults to 0. |
+| `pmc` | int | optional | 1 if motion updates apply (Pulseq `PMC`). Defaults to 0. |
 | `physio_trigger` | int | optional | Binary hardware flag (1 or 0) indicating whether execution must pause to await a physical gating event (e.g., ECG R-wave or respiratory trigger) before playing out this instance. Defaults to 0 if omitted. |
 | `label` | string | optional | Optional execution stream label for this instance (e.g., for slice or contrast indexing). |
 
@@ -137,6 +163,12 @@ single execution in the execution stream.
 - For multishot base gradients, the per-instance physical gradient uses the shot variant
   selected by `gradient_shot_index`: physical gradient = rotation × signed-scale ×
   (selected-variant normalized waveform)
+- Event counting: an RF event is one block with an `rf` event, an ADC event one block with
+  an `adc` event, and a gradient event one block with at least one of `gx`, `gy`, `gz`. A
+  block with both `gx` and `gy` consumes one row of `gradient_amplitude`.
+- Scaling is applied before rotation: `G_phys(t) = R * diag(s) * G_base(t)`, with `s` the row
+  of `gradient_amplitude`, `R` the rotation (identity if omitted) and missing axes of
+  `G_base` zero.
 
 ### 3.4 PulSeg Representation (Top-Level Structure)
 
@@ -144,12 +176,30 @@ A complete PulSeg representation consists of the following top-level fields:
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `pulseg_version` | string | required | Version of this specification. Must be `"2.1-alpha"` for representations compliant with this document. |
+| `pulseg_version` | string | required | Version of this specification. Must be `"2.2.0"` for representations compliant with this document. |
 | `base_blocks` | BaseBlock[] | required | List of all base blocks. Must be non-empty. IDs must be unique. |
 | `virtual_segments` | VirtualSegment[] | required | List of all virtual segments. Must be non-empty. IDs must be unique. |
 | `execution_stream` | SegmentInstance[] | required | Ordered list of segment instances defining the complete scan execution. Must be non-empty. |
 | `source_file` | string | optional | Path or filename of the source Pulseq `.seq` file from which this representation was generated. |
 | `creation_date` | string | optional | ISO 8601 date string (e.g., `"2025-02-20"`) indicating when this representation was created. |
+
+### 3.5 Stored Representations
+
+A stored PulSeg representation is any file from which a reader can reconstruct Section 3
+without loss. It MUST state the PulSeg version it encodes (directly or through its own format
+version) and declare any units or numeric formats that differ from Section 3. It MAY number
+base blocks and virtual segments by its own scheme and omit the reserved IDs 0 and 1, which
+the reader then assigns (Section 3.1); select shot variants by shape reference; encode the
+execution stream compactly, provided it expands to the same stream; and carry additional
+sections that a reader may skip. The pulserver IR cache (`.pseg`) at layout revision 0.0.7
+is a stored representation of PulSeg 2.2.0.
+
+### 3.6 Conformance
+
+A **converter** produces from Pulseq a representation satisfying Section 4. A **consumer**
+plays any representation satisfying Section 3, or refuses it with a stated reason (e.g. a
+hardware limit); it MAY ignore an optional field only where that field is at its default
+throughout.
 
 ---
 
@@ -162,27 +212,28 @@ Conversion from a Pulseq `.seq` file to PulSeg proceeds in three steps:
 1. **Parse and normalize** — Read all Pulseq blocks; normalize waveform amplitudes to 
    produce base blocks (see Section 3.1 normalization rules).
 2. **Identify segments** — Group consecutive base blocks into virtual segments. Segment 
-   boundaries must be explicitly annotated in the Pulseq file using the PulSeg labeling 
-   convention (see Section 4.2).
+   boundaries are chosen by the converter (see Section 4.2).
 3. **Build the execution stream** — For each instance of each virtual segment in the Pulseq 
    block stream, record the physical amplitude, phase, and frequency parameters as a 
    segment instance.
 
 
-### 4.2 Segment Instance Boundary Annotation
+### 4.2 Segment Boundaries
 
-Segment instance boundaries are defined by the sequence designer at the time of Pulseq sequence
-creation, using Pulseq block labels. The labeling convention is as follows:
+Segment boundaries are chosen by the converter. The source Pulseq file is not required to
+carry any label for this purpose.
 
-- The first block of each segment instance MUST carry a `TRID` label.
-- The value of the `TRID` label identifies the virtual segment instantiated by that segment instance.
-- Blocks following a `TRID`-labeled block are considered part of the same segment instance until the next block carrying a `TRID` label or the end of the sequence.
-- Blocks inside a segment instance MUST NOT also carry `TRID` labels.
-- Repeated occurrences of the same `TRID` value are treated as instances of the same virtual segment and MUST have the same number of Pulseq blocks and the same normalized base-block structure. For gradient events, *the same structure* is defined by timing structure (Section 3.1): repeated instances MAY select different shot variants via `gradient_shot_index`, provided the gradient timing structure is identical across instances.
-- The first Pulseq block in the source sequence MUST carry a `TRID` label.
+- A converter MUST document the rule by which it places boundaries.
+- Boundaries fall between Pulseq blocks; a block is never split across segment instances.
+- All instances of a virtual segment MUST have the same number of Pulseq blocks and the same normalized base-block structure. For gradient events, *the same structure* is defined by timing structure (Section 3.1): instances MAY select different shot variants via `gradient_shot_index`, provided the gradient timing structure is identical across instances.
+- A converter SHOULD place boundaries only where every gradient is at or near zero, since a
+  backend may set its gradients at the start of each instance.
+- A converter MUST place a boundary wherever `norot` or `pmc` changes, since a backend sets
+  one prescription transform per instance.
 
-*[Note: provide a concrete example here, ideally with a code snippet from a Pulseq sequence 
-file and the resulting PulSeg representation.]*
+Different converters may segment the same file differently; each result is valid if it
+satisfies Section 3. A future version may define an optional label by which a sequence
+designer fixes the boundaries.
 
 ### 4.3 Conversion Requirements
 
@@ -195,6 +246,8 @@ The following requirements apply to any compliant Pulseq-to-PulSeg conversion:
 - The `pulseg_version` field MUST be set to the version of this specification
 - Amplitude scaling factors MUST be such that: physical amplitude = normalized amplitude × scale factor
 - Gradient shapes that differ across instances of one virtual segment MUST be encoded per the shot-variant rules in Section 3.1 (shot variants only for shapes not related by scaling or rotation; scale/rotation families use a single shot variant).
+- Pulseq labels and extensions not represented by this specification MAY be omitted or kept
+  as additional fields.
 
 ---
 
@@ -209,7 +262,7 @@ between base blocks, virtual segments, and segment instances in the execution st
 
 ## 6. Versioning and Changelog
 
-**Current version:** 2.1-alpha
+**Current version:** 2.2.0
 
 Any change to this specification that affects data structure definitions, field names, 
 field types, required/optional status, or normalization rules must:
@@ -225,6 +278,7 @@ field types, required/optional status, or normalization rules must:
 | 1.0 | 2025-02-20 | Initial release |
 | 2.0-alpha | 2026-06-11 | Class definition structural upgrade; minor naming standard alignment to PyPulseq variable guide |
 | 2.1-alpha | 2026-06-18 | Clarified that a virtual segment is a reusable structural unit (replaced the "TR period" example; it need not be periodic). Folded multishot gradients into the base-block model: a gradient event may carry co-timed shot variants identified by timing structure, selected per instance via the optional `gradient_shot_index` field. Additive and backward-compatible; single-shot representations are unaffected. |
+| 2.2.0 | 2026-11-04 | `TRID` labels no longer required; segment boundaries are chosen by the converter. Added the optional `trig` event and instance fields `rf_shim`, `adc_acquire`, `trig_enable`, `norot`, `nopos`, `pmc`; stored representations and conformance (Sections 3.5, 3.6). Added the unknown-fields clause, units, event counting, scaling before rotation and array shapes. A 2.1-alpha representation is valid 2.2.0 once its version string is updated. |
 
 ---
 
