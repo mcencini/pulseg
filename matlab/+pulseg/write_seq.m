@@ -354,6 +354,9 @@ return
 function g = select_shot(g, shot)
 % SELECT_SHOT Replace a multishot gradient's waveform by one shot variant (0-based).
 
+if strcmp(g.type, 'trap')
+    return;
+end
 if ~isfield(g, 'shot_waveforms') || isempty(g.shot_waveforms)
     assert(shot == 0, 'Shot %d requested from a gradient with one shot variant.', shot);
     return;

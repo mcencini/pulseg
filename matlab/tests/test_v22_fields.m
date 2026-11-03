@@ -150,14 +150,20 @@ end
 
 function ir = with_two_shot_variants(ir)
     p = arbitrary_gx_block(ir);
-    g = ir.base_blocks(p).block.gx;
-    w = g.waveform(:).';
-    ramp = linspace(0.5, 1, numel(w));
-    peak = max(abs(w .* ramp));
-    g.shot_waveforms = [w; w .* ramp / peak];
-    g.shot_first = [g.first, 0.5 * g.first / peak];
-    g.shot_last = [g.last, g.last / peak];
-    ir.base_blocks(p).block.gx = g;
+    for a = {'gx', 'gy', 'gz'}
+        b = ir.base_blocks(p).block;
+        if ~isfield(b, a{1}) || isempty(b.(a{1})) || ~strcmp(b.(a{1}).type, 'grad')
+            continue;
+        end
+        g = b.(a{1});
+        w = g.waveform(:).';
+        ramp = linspace(0.5, 1, numel(w));
+        peak = max(abs(w .* ramp));
+        g.shot_waveforms = [w; w .* ramp / peak];
+        g.shot_first = [g.first, 0.5 * g.first / peak];
+        g.shot_last = [g.last, g.last / peak];
+        ir.base_blocks(p).block.(a{1}) = g;
+    end
     for k = 1:numel(ir.execution_stream)
         n_grad = size(ir.execution_stream(k).gradient_amplitude, 1);
         ir.execution_stream(k).gradient_shot_index = zeros(n_grad, 1);

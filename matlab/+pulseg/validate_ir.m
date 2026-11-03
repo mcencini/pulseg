@@ -485,15 +485,6 @@ function check_base_block_normalization(b, bb_name)
             end
         end
 
-        if isfield(g, 'shot_waveforms') && ~isempty(g.shot_waveforms)
-            for shot = 1:size(g.shot_waveforms, 1)
-                peak = max(abs(g.shot_waveforms(shot, :)));
-                assert(peak <= tol || abs(peak - 1) <= tol, ...
-                    '%s.block.%s shot variant %d is not normalized. Peak = %.6g.', ...
-                    bb_name, gname, shot - 1, peak);
-            end
-        end
-
         if isfield(g, 'amplitude') && ~isempty(g.amplitude)
             amp = g.amplitude;
 

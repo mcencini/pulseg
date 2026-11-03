@@ -470,6 +470,18 @@ if has_waveform
         end
     end
 
+    if arg.require_normalized && isfield(g, 'shot_waveforms') && ~isempty(g.shot_waveforms)
+        tol = 1e-9;
+        for shot = 1:size(g.shot_waveforms, 1)
+            peak = max(abs(g.shot_waveforms(shot, :)));
+            if peak > tol && abs(peak - 1) > tol
+                report = add_error(report, sprintf( ...
+                    '%s shot variant %d is not normalized. max(abs(waveform)) = %.15g.', ...
+                    name, shot - 1, peak));
+            end
+        end
+    end
+
     return;
 end
 
