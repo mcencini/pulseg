@@ -260,3 +260,27 @@ def test_a_readout_played_but_not_stored_is_refused_by_write(representation):
     pulseg.validate_ir(representation)
     with pytest.raises(NotImplementedError, match="adc_acquire"):
         pulseg.write(representation, system=pp.Opts())
+
+
+def test_an_rf_shim_is_read_per_rf_event_and_survives_a_round_trip():
+    seq = pp.Sequence(pp.Opts())
+    weights = np.array([1.0, 0.5j])
+    seq.add_block(pp.make_block_pulse(np.pi / 2, duration=1e-3), pp.make_rf_shim(weights))
+    seq.add_block(pp.make_delay(1e-3))
+    rep = pulseg.read(seq)
+    rf_instance = rf_instances(rep)[0]
+    np.testing.assert_allclose(rf_instance.rf_shim[0], weights, atol=1e-5)
+    back = pulseg.write(rep)
+    np.testing.assert_allclose(back.get_block(1).rf_shim.shim_vector, weights, atol=1e-5)
+
+
+def test_an_output_trigger_is_read_into_its_base_block_and_written_back():
+    seq = gradient_echo(n_lines=2)
+    seq.add_block(pp.make_delay(2e-3), pp.make_digital_output_pulse("ext1", delay=20e-6, duration=100e-6))
+    rep = pulseg.read(seq)
+    triggered = [b for b in rep.base_blocks if b.block.trig]
+    assert len(triggered) == 1
+    assert triggered[0].block.trig[0].channel == "ext1"
+    back = pulseg.write(rep)
+    fired = [i for i in range(1, back.num_blocks + 1) if getattr(back.get_block(i), "trig", None)]
+    assert fired == [back.num_blocks]

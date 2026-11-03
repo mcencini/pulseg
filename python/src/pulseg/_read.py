@@ -23,6 +23,7 @@ from ._model import (
 )
 
 _RF_USE = {0: "undefined", 1: "excitation", 2: "refocusing"}
+_OUTPUT_CHANNELS = {1: "osc0", 2: "osc1", 3: "ext1"}
 
 
 def _same(a: np.ndarray, b: np.ndarray, tol: float = 1e-6) -> bool:
@@ -35,6 +36,7 @@ class _Position:
     def __init__(self):
         self.base: PulseqBlock | None = None
         self.shots: list[tuple[np.ndarray, np.ndarray]] = []
+        self.trigger: SimpleNamespace | None = None
 
     def shot(self, tt: np.ndarray, shape: np.ndarray) -> int:
         for n, (t, s) in enumerate(self.shots):
@@ -87,6 +89,23 @@ def _gradient_shapes(played, b) -> tuple[np.ndarray, np.ndarray]:
             tt[a, : stop - first] = played["gradient_time_us"][first:stop] * 1e-6
             shape[a, : stop - first] = values / amplitude if amplitude != 0 else values
     return tt, shape
+
+
+def _output_trigger(played, b) -> SimpleNamespace | None:
+    channel = int(played["trigger_channel"][b])
+    if channel < 0:
+        return None
+    return SimpleNamespace(
+        type="output",
+        channel=_OUTPUT_CHANNELS.get(channel, str(channel)),
+        delay=played["trigger_delay_us"][b] * 1e-6,
+        duration=played["trigger_duration_us"][b] * 1e-6,
+    )
+
+
+def _rf_shim(played, b) -> np.ndarray:
+    first, stop = played["rf_shim_span"][b]
+    return np.asarray(played["rf_shim"][first:stop], dtype=complex)
 
 
 def _plays_gradient(played, b) -> bool:
@@ -210,6 +229,12 @@ def read(seq, system=None, *, verbose: bool = False) -> Representation:
     return rep
 
 
+def _instance_shim(played, rf) -> np.ndarray:
+    weights = [_rf_shim(played, k) for k in rf]
+    width = max((w.size for w in weights), default=1)
+    return np.array([w if w.size else np.ones(width) for w in weights], dtype=complex).reshape(-1, width)
+
+
 def _representation(segments, played, system) -> Representation:
     n_blocks = len(played["segment"])
     positions = {s: [_Position() for _ in range(int(seg["num_blocks"]))] for s, seg in enumerate(segments)}
@@ -229,6 +254,8 @@ def _representation(segments, played, system) -> Representation:
                     position.base.adc = _adc_event(played, k, system)
             if _plays_gradient(played, k):
                 shots.append(position.shot(*_gradient_shapes(played, k)))
+            if position.trigger is None:
+                position.trigger = _output_trigger(played, k)
         instances.append((s, blocks, shots, bool(segments[s]["has_trigger"])))
         b += length
 
@@ -238,6 +265,8 @@ def _representation(segments, played, system) -> Representation:
         durations = np.array([[played["duration_us"][k] for k in blocks] for blocks in plays])
         for p, position in enumerate(segment_positions):
             block = position.base
+            if position.trigger is not None:
+                block.trig = [position.trigger]
             if position.shots:
                 for axis, event in _gradient_events(*position.shots[0], position.shots).items():
                     setattr(block, axis, event)
@@ -254,11 +283,14 @@ def _representation(segments, played, system) -> Representation:
         for s, segment_positions in positions.items()
     ]
     uses_shots = any(len(p.shots) > 1 for ps in positions.values() for p in ps)
+    uses_shim = bool(len(played["rf_shim"]))
     stream = []
     for s, blocks, shots, physio in instances:
         rf = [k for k in blocks if played["rf_channels"][k]]
         grad = [k for k in blocks if _plays_gradient(played, k)]
         adc = [k for k in blocks if played["adc"][k]]
+        triggered = [k for p, k in enumerate(blocks) if positions[s][p].trigger is not None]
+        fires = [int(played["trigger_channel"][k] >= 0) for k in triggered]
         stream.append(
             SegmentInstance(
                 virtual_segment_id=s + 1,
@@ -273,6 +305,8 @@ def _representation(segments, played, system) -> Representation:
                 physio_trigger=int(physio),
                 norot=int(played["norot"][blocks.start]),
                 nopos=int(played["nopos"][blocks.start]),
+                rf_shim=_instance_shim(played, rf) if uses_shim else None,
+                trig_enable=np.asarray(fires, dtype=int) if not all(fires) else None,
             )
         )
     return Representation(

@@ -69,7 +69,6 @@ Amplitudes and shapes come from pulserver in single precision.
 
 ## Not yet supported
 
-- RF shims and output triggers in `read`.
 - `translateFOVrf`.
 - A stored file format: representations live in memory.
 
