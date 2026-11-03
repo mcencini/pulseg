@@ -3,6 +3,7 @@
 from types import SimpleNamespace
 
 import numpy as np
+import pypulseqpp as pp
 import pytest
 from conftest import make_readout_block, make_rf_block
 
@@ -68,7 +69,6 @@ def test_no_gradient_has_no_energy():
 
 
 def test_normalize_block_moves_polarity_into_a_signed_scale():
-    pp = pytest.importorskip("pypulseqpp")
     seq = pp.Sequence(pp.Opts())
     seq.add_block(pp.make_arbitrary_grad("x", -2e4 * np.sin(np.linspace(0, np.pi, 20))))
     block = seq.get_block(1)

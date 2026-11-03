@@ -5,11 +5,13 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import numpy as np
+import pypulseqpp as pp
 
 from ._blocks import get_grad_energy, shot_shape
-from ._import import PRESCRIPTION_FLAGS, _pypulseqpp
 from ._model import CONSTANT_DELAY_ID, GRADIENT_AXES, VARIABLE_DELAY_ID, PulseqBlock, Representation
 from ._validate import validate_ir
+
+PRESCRIPTION_FLAGS = ("NOROT", "NOPOS", "PMC")
 
 
 def physical_blocks(rep: Representation):
@@ -62,12 +64,14 @@ def physical_blocks(rep: Representation):
                     if grad is None:
                         continue
                     event = SimpleNamespace(**vars(grad))
-                    for name in ("shot_waveforms", "shot_first", "shot_last"):
+                    for name in ("shot_tt", "shot_waveforms", "shot_first", "shot_last"):
                         event.__dict__.pop(name, None)
                     if grad.type == "trap":
                         event.amplitude = grad.amplitude * scale[a]
                     else:
-                        waveform, first, last = shot_shape(grad, shot)
+                        tt, waveform, first, last = shot_shape(grad, shot)
+                        event.tt = np.asarray(tt)
+                        event.shape_dur = float(event.tt[-1])
                         event.waveform = waveform * scale[a]
                         event.first = first * scale[a]
                         event.last = last * scale[a]
@@ -85,7 +89,7 @@ def physical_blocks(rep: Representation):
             yield block, rotation, shim, inst
 
 
-def write_seq(rep: Representation, seqfile=None, *, strict: bool = False, verbose: bool = False, system=None):
+def write(rep: Representation, seqfile=None, *, strict: bool = False, verbose: bool = False, system=None):
     """Flatten a PulSeg representation into a Pulseq sequence, and optionally write it.
 
     Every block is emitted at its physical amplitudes and selected shot, with
@@ -115,7 +119,6 @@ def write_seq(rep: Representation, seqfile=None, *, strict: bool = False, verbos
     ValidationError
         With ``strict``, for an invalid representation.
     """
-    pp = _pypulseqpp()
     if strict:
         validate_ir(rep)
     seq = pp.Sequence(system) if system is not None else pp.Sequence()
@@ -142,9 +145,7 @@ def write_seq(rep: Representation, seqfile=None, *, strict: bool = False, verbos
     if seqfile is not None:
         seq.write(str(seqfile))
     if verbose:
-        print(
-            f"write_seq: {seq.num_blocks} blocks" + (f" written to {seqfile}" if seqfile is not None else "")
-        )
+        print(f"write: {seq.num_blocks} blocks" + (f" written to {seqfile}" if seqfile is not None else ""))
     return seq
 
 

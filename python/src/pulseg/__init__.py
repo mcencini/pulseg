@@ -1,7 +1,8 @@
 """PulSeg: a segment-based intermediate representation of MRI pulse sequences.
 
-The functions mirror the MATLAB toolbox in ``matlab/+pulseg``; ``import_``
-stands for ``pulseg.import``, since ``import`` is a Python keyword.
+:func:`read` segments a Pulseq sequence with pulserver; :func:`write` plays a
+representation back as a Pulseq sequence. The other functions mirror the
+MATLAB toolbox in ``matlab/+pulseg``.
 """
 
 from ._blocks import (
@@ -12,7 +13,6 @@ from ._blocks import (
     get_grad_energy,
     normalize_block,
 )
-from ._import import import_
 from ._model import (
     CONSTANT_DELAY_ID,
     SUPPORTED_VERSIONS,
@@ -23,8 +23,9 @@ from ._model import (
     SegmentInstance,
     VirtualSegment,
 )
+from ._read import read
 from ._validate import ValidationError, find_problems, validate_ir
-from ._write import stream2loop, write_seq
+from ._write import stream2loop, write
 
 __version__ = "0.1.0.dev0"
 
@@ -44,9 +45,9 @@ __all__ = [
     "compare_normalized_blocks",
     "find_problems",
     "get_grad_energy",
-    "import_",
     "normalize_block",
+    "read",
     "stream2loop",
     "validate_ir",
-    "write_seq",
+    "write",
 ]

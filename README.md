@@ -50,11 +50,11 @@ addpath pulseg/matlab
 addpath(genpath('pulseg/matlab/third_party'))
 ```
 
-For Python (data model, validation, and conversion from and to Pulseq), see
+For Python (data model, validation, and reading and writing Pulseq through pulserver), see
 [`python/README.md`](python/README.md):
 
 ```bash
-pip install "pulseg[pulseq]"
+pip install pulseg
 ```
 
 ---

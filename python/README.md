@@ -7,9 +7,11 @@ stream of segment instances.
 ## Install
 
 ```bash
-pip install pulseg              # data model and validation (numpy only)
-pip install "pulseg[pulseq]"    # plus conversion from and to Pulseq, via pypulseqpp
+pip install pulseg
 ```
+
+pulseg depends on [pulserver](https://pypi.org/project/pulserver/), which segments
+Pulseq sequences, and on [pypulseqpp](https://pypi.org/project/pypulseqpp/).
 
 From a clone, for development:
 
@@ -21,65 +23,53 @@ pytest
 
 ## Usage
 
-The functions mirror the MATLAB toolbox in `matlab/+pulseg`, with Python naming.
-`import` is a Python keyword, so the MATLAB `pulseg.import` is `pulseg.import_`.
-
 ```python
 import pypulseqpp as pp
 import pulseg
 
-rep = pulseg.import_("gre.seq")  # Pulseq file or pypulseqpp.Sequence -> PulSeg
+system = pp.Opts()
+rep = pulseg.read("gre.seq", system)  # Pulseq file or pypulseqpp.Sequence -> PulSeg
 pulseg.validate_ir(rep)  # raises ValidationError listing every problem
-seq = pulseg.write_seq(rep, "gre_roundtrip.seq", system=pp.Opts())
+seq = pulseg.write(rep, "gre_roundtrip.seq", system=system)
 loop = pulseg.stream2loop(rep)  # one row per block, the MATLAB column layout
 ```
 
-| MATLAB | Python |
-| --- | --- |
-| `pulseg.import` | `pulseg.import_` |
-| `pulseg.validate_ir` | `pulseg.validate_ir`, `pulseg.find_problems` |
-| `pulseg.check_pulseq_block` | `pulseg.check_pulseq_block` |
-| `pulseg.check_base_blocks` | `pulseg.check_base_blocks` |
-| `pulseg.normalize_block` | `pulseg.normalize_block` |
-| `pulseg.compare_normalized_blocks` | `pulseg.compare_normalized_blocks` |
-| `pulseg.get_grad_energy` | `pulseg.get_grad_energy` |
-| `pulseg.write_seq` | `pulseg.write_seq` |
-| `pulseg.stream2loop` | `pulseg.stream2loop` |
+`read` hands the sequence to pulserver (`pulserver.ir.convert`) and plays the result back
+(`pulserver.ir.play`), so pulseg and the pulserver interpreter see the same segmentation.
+Each pulserver segment is one virtual segment, and each of its block positions one base
+block. `write` plays a representation back as a Pulseq sequence; pass the `system` the
+source was built with, since arbitrary gradients are rebuilt on its gradient raster.
 
-`write_seq` rebuilds arbitrary gradients on the gradient raster of `system`; pass the
-system the source sequence was built with.
+The remaining functions mirror the MATLAB toolbox in `matlab/+pulseg`:
+`validate_ir`, `check_pulseq_block`, `check_base_blocks`, `normalize_block`,
+`compare_normalized_blocks`, `get_grad_energy` and `stream2loop`.
 
 ## Segment boundaries
 
-The source file needs no `TRID` label. A segment instance starts at every repetition
-`pypulseqpp.Sequence.repetition()` reports, at every block carrying a physiological
-trigger, and wherever the `NOROT`, `NOPOS` or `PMC` label changes. Instances with the
-same sequence of base blocks play one virtual segment. A pure delay is base block 1 where
-its duration differs between the instances of its virtual segment, and base block 0
-otherwise.
+The source file needs no `TRID` label. `pulserver.ir.Grouping` documents where
+boundaries fall. A pure delay is base block 1 where its duration differs between the
+instances of its virtual segment, and base block 0 otherwise.
 
 ## Gradient shot variants
 
-A base block is identified by the shapes of its RF and ADC events and by the timing of
-its gradients. Arbitrary gradients that share a timing but differ in shape after
-normalization, such as independently designed spiral interleaves, become shot variants
-of one base block, and each segment instance selects one through `gradient_shot_index`.
-A scaled copy of a waveform is the same shot with a different gradient amplitude.
+A gradient that a block position plays with another normalized shape or timing in some
+instances, such as a spiral interleaf or a rotated readout, is a shot variant of that
+position's base block, and each segment instance selects one through
+`gradient_shot_index`. A scaled copy of a waveform is the same shot with a different
+gradient amplitude. Rotations reach the gradient shapes this way, so `read` leaves
+`rotation_matrix` unset.
 
-## Soft delays
-
-Pass the value entered at the console, in ms, as `import_(..., soft_delay_input_ms=...)`.
-Every soft delay resolves to `input / factor + offset`.
+Amplitudes and shapes come from pulserver in single precision.
 
 ## Specification versions
 
 `pulseg.SUPPORTED_VERSIONS` lists the versions the validator accepts: 2.1-alpha and the
-2.2-alpha draft. A converted sequence is written as 2.1-alpha unless it uses a field
-only 2.2-alpha defines (`rf_shim`, `norot`, `nopos`, `pmc`, `adc_acquire`, `trig_enable`).
+2.2-alpha draft. `read` writes 2.1-alpha unless an instance sets `NOROT` or `NOPOS`,
+which only 2.2-alpha defines.
 
 ## Not yet supported
 
-- RF or ADC offsets given in ppm.
+- RF shims and output triggers in `read`.
 - `translateFOVrf`.
 - A stored file format: representations live in memory.
 

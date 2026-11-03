@@ -110,8 +110,8 @@ def num_shots(block: PulseqBlock) -> int:
     return max(counts, default=1)
 
 
-def shot_shape(event, shot: int) -> tuple[np.ndarray, float, float]:
-    """Return the normalized waveform, first and last value of one shot of an arbitrary gradient.
+def shot_shape(event, shot: int) -> tuple[np.ndarray, np.ndarray, float, float]:
+    """Return the corner times, normalized waveform, first and last value of one shot.
 
     Parameters
     ----------
@@ -122,26 +122,15 @@ def shot_shape(event, shot: int) -> tuple[np.ndarray, float, float]:
 
     Returns
     -------
-    waveform : numpy.ndarray
+    tt, waveform : numpy.ndarray
     first, last : float
     """
     if hasattr(event, "shot_waveforms"):
-        return event.shot_waveforms[shot], float(event.shot_first[shot]), float(event.shot_last[shot])
+        tt = event.shot_tt[shot] if hasattr(event, "shot_tt") else event.tt
+        return tt, event.shot_waveforms[shot], float(event.shot_first[shot]), float(event.shot_last[shot])
     if shot != 0:
         raise IndexError(f"gradient has one shot variant, shot {shot} requested")
-    return event.waveform, float(event.first), float(event.last)
-
-
-def gradient_timing(event) -> tuple:
-    """Return the timing structure that identifies a gradient event.
-
-    ``(delay, rise, flat, fall)`` for a trapezoid; ``(delay, tt, shape_dur)``
-    for an arbitrary gradient or extended trapezoid.
-    """
-    if event.type == "trap":
-        return ("trap", *(round(float(getattr(event, f)), 12) for f in _TRAP_FIELDS))
-    tt = np.round(np.asarray(event.tt, dtype=float), 12)
-    return ("grad", round(float(event.delay), 12), tt.tobytes(), round(float(event.shape_dur), 12))
+    return event.tt, event.waveform, float(event.first), float(event.last)
 
 
 def _same(a, b, tol) -> bool:
@@ -207,8 +196,9 @@ def get_grad_energy(g, scale: float, shot: int = 0) -> float:
         a = g.amplitude
         energy = a * a * (g.rise_time / 3 + g.flat_time + g.fall_time / 3)
     else:
-        waveform, _, _ = shot_shape(g, shot)
-        energy = float(np.sum(np.asarray(waveform)[:-1] ** 2 * np.diff(np.asarray(g.tt))))
+        tt, waveform, _, _ = shot_shape(g, shot)
+        w, dt = np.asarray(waveform, dtype=float), np.diff(np.asarray(tt, dtype=float))
+        energy = float(np.sum(dt * (w[:-1] ** 2 + w[:-1] * w[1:] + w[1:] ** 2) / 3))
     return float(scale) ** 2 * energy
 
 
